@@ -1,0 +1,11 @@
+# Ne JAMAIS commit le JSON en clair
+data.json
+data.plain.json
+*.plain.json
+
+# Système
+.DS_Store
+Thumbs.db
+node_modules/
+.env
+.env.local
