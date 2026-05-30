@@ -105,8 +105,16 @@ a{color:#9ad4ff}
 .day-name{font-weight:700;font-size:13.5px;color:#fff;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;display:flex;align-items:center;gap:8px}
 .day-name::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c,#7c5cff);box-shadow:0 0 8px var(--c,#7c5cff)}
 .day-tasks{list-style:none;display:flex;flex-direction:column;gap:6px}
-.task{display:flex;gap:9px;padding:8px 10px;background:rgba(7,9,26,.55);border-radius:9px;font-size:13px;line-height:1.35}
+.task{display:flex;align-items:center;gap:9px;padding:9px 12px;background:rgba(7,9,26,.55);border-radius:9px;font-size:13px;line-height:1.35;color:#e8ecf4;text-align:left;width:100%}
+.task.editable:active{background:rgba(7,9,26,.85)}
+.task.add{background:transparent;border:1px dashed #2a3552;color:#8b95a8;justify-content:center;margin-top:2px}
+.task.add:active{background:rgba(124,92,255,.08);color:#cfb6ff;border-color:rgba(124,92,255,.5)}
 .task-i{flex-shrink:0;font-size:14px}
+.task-lbl{flex:1;min-width:0}
+.task-chev{margin-left:auto;color:#5d6779;font-size:14px;flex-shrink:0}
+.daily-tag.editable:active{background:rgba(124,92,255,.28)}
+.daily-tag.add{background:transparent;border:1px dashed rgba(124,92,255,.4);color:#cfb6ff}
+.daily-tag.add:active{background:rgba(124,92,255,.18)}
 /* fab */
 .fab{position:fixed;bottom:max(20px,env(safe-area-inset-bottom));right:18px;z-index:20;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#7c5cff,#00d4ff);color:#fff;font-size:26px;font-weight:600;box-shadow:0 14px 30px -8px rgba(124,92,255,.55);display:flex;align-items:center;justify-content:center}
 .fab:active{transform:scale(.95)}
@@ -586,16 +594,87 @@ function confirmDelete(e){
 
 function renderPlanning(){
   const p = vault.planning;
-  if(!p){ $("#planView").innerHTML = '<div class="empty"><div class="empty-i">📅</div><h2>Pas de planning</h2></div>'; return; }
-  const daily = (p.daily||[]).map(d => '<span class="daily-tag">' + (d.icon||"") + ' ' + esc(d.label) + '</span>').join("");
-  const days = (p.days||[]).map(d => {
+  if(!p){
+    $("#planView").innerHTML = '<div class="empty"><div class="empty-i">📅</div><h2>Pas de planning</h2><p>Demande à Claude d\'ajouter un planning.</p></div>';
+    return;
+  }
+  const dailyHtml = (p.daily||[]).map((d,i) =>
+    '<button class="daily-tag editable" data-ed="' + i + '">' + (d.icon||"") + ' ' + esc(d.label) + '</button>'
+  ).join("") + '<button class="daily-tag add" data-ad>➕ Ajouter</button>';
+  const daysHtml = (p.days||[]).map((d, dIdx) => {
     const safe = /^#[0-9a-fA-F]{3,8}$/.test(d.color||"") ? d.color : "#7c5cff";
-    const tasks = (d.tasks||[]).map(t => '<li class="task"><span class="task-i">' + (t.icon||"•") + '</span><span>' + esc(t.label) + '</span></li>').join("");
-    return '<div class="day" style="--c:' + safe + '"><div class="day-name">' + esc(d.name) + '</div><ul class="day-tasks">' + (tasks||'<li class="task" style="justify-content:center;color:#5d6779">—</li>') + '</ul></div>';
+    const tasksHtml = (d.tasks||[]).map((t, tIdx) =>
+      '<button class="task editable" data-et="' + dIdx + '-' + tIdx + '"><span class="task-i">' + (t.icon||"•") + '</span><span class="task-lbl">' + esc(t.label) + '</span><span class="task-chev">›</span></button>'
+    ).join("") +
+    '<button class="task add" data-at="' + dIdx + '"><span class="task-i">➕</span><span class="task-lbl">Ajouter une tâche</span></button>';
+    return '<div class="day" style="--c:' + safe + '"><div class="day-name">' + esc(d.name) + '</div><div class="day-tasks">' + tasksHtml + '</div></div>';
   }).join("");
-  $("#planView").innerHTML = '<div class="plan-head"><div class="plan-title">📅 ' + esc(p.title||"Planning") + '</div>' +
-    (daily ? '<div class="daily"><div class="daily-lab">🔁 Tous les jours</div><div class="daily-tags">' + daily + '</div></div>' : '') +
-    '</div><div class="days">' + days + '</div>';
+  $("#planView").innerHTML = '<div class="plan-head"><div class="plan-title">📅 ' + esc(p.title||"Planning") + '</div><div class="daily"><div class="daily-lab">🔁 Tous les jours</div><div class="daily-tags">' + dailyHtml + '</div></div></div><div class="days">' + daysHtml + '</div>';
+  $$("[data-et]").forEach(b => b.onclick = () => { const p2 = b.dataset.et.split("-").map(Number); showEditTask(p2[0], p2[1]); });
+  $$("[data-at]").forEach(b => b.onclick = () => showAddTask(+b.dataset.at));
+  $$("[data-ed]").forEach(b => b.onclick = () => showEditDaily(+b.dataset.ed));
+  $$("[data-ad]").forEach(b => b.onclick = () => showAddDaily());
+}
+
+function taskFormHTML(task){
+  task = task || {};
+  const isEdit = !!task.label;
+  return '<div class="form">' +
+    '<label class="lbl">Icône</label>' +
+    '<div class="row-2"><input class="ipt center" id="t-icon" value="' + esc(task.icon||"") + '" placeholder="•" maxlength="4" />' +
+    '<div class="icon-grid">' + ICONS_QUICK.map(i => '<button type="button" class="ip" data-ic="' + i + '">' + i + '</button>').join("") + '</div></div>' +
+    '<label class="lbl">Texte *</label>' +
+    '<input class="ipt" id="t-label" value="' + esc(task.label||"") + '" placeholder="Ex : Faire les courses" autocapitalize="sentences" />' +
+    '<div class="form-actions">' +
+      '<button type="button" class="btn-2nd" data-close>Annuler</button>' +
+      (isEdit ? '<button type="button" class="btn danger" id="t-del">🗑️</button>' : '') +
+      '<button type="button" class="btn" id="t-save">Enregistrer</button>' +
+    '</div></div>';
+}
+function bindTaskForm(ctx){
+  const sheet = sheetStack[sheetStack.length-1]; if(!sheet) return;
+  sheet.querySelectorAll(".ip").forEach(b => b.onclick = () => { sheet.querySelector("#t-icon").value = b.dataset.ic; });
+  sheet.querySelector("#t-save").onclick = async () => {
+    const label = sheet.querySelector("#t-label").value.trim();
+    if(!label){ toast("Donne un texte","err"); return; }
+    const t = { icon: sheet.querySelector("#t-icon").value.trim() || "•", label };
+    if(!vault.planning) vault.planning = { title:"Planning", daily:[], days:[] };
+    if(ctx.type === "day"){
+      const day = vault.planning.days[ctx.dIdx];
+      if(!day.tasks) day.tasks = [];
+      if(ctx.tIdx < 0) day.tasks.push(t); else day.tasks[ctx.tIdx] = t;
+    }else{
+      if(!vault.planning.daily) vault.planning.daily = [];
+      if(ctx.idx < 0) vault.planning.daily.push(t); else vault.planning.daily[ctx.idx] = t;
+    }
+    await persist(); closeAllSheets(); renderApp(); toast("Sauvegardé ✓");
+  };
+  const del = sheet.querySelector("#t-del");
+  if(del) del.onclick = async () => {
+    if(ctx.type === "day") vault.planning.days[ctx.dIdx].tasks.splice(ctx.tIdx, 1);
+    else vault.planning.daily.splice(ctx.idx, 1);
+    await persist(); closeAllSheets(); renderApp(); toast("Supprimé ✓");
+  };
+  sheet.querySelectorAll("[data-close]").forEach(b => b.onclick = () => closeAllSheets());
+}
+function showEditTask(dIdx, tIdx){
+  const d = vault.planning.days[dIdx]; const t = d.tasks[tIdx];
+  openSheet("Tâche · " + d.name, taskFormHTML(t));
+  bindTaskForm({type:"day", dIdx, tIdx});
+}
+function showAddTask(dIdx){
+  const d = vault.planning.days[dIdx];
+  openSheet("Nouvelle tâche · " + d.name, taskFormHTML(null));
+  bindTaskForm({type:"day", dIdx, tIdx:-1});
+}
+function showEditDaily(idx){
+  const t = vault.planning.daily[idx];
+  openSheet("Tâche quotidienne", taskFormHTML(t));
+  bindTaskForm({type:"daily", idx});
+}
+function showAddDaily(){
+  openSheet("Nouvelle tâche quotidienne", taskFormHTML(null));
+  bindTaskForm({type:"daily", idx:-1});
 }
 
 function showSettings(){
