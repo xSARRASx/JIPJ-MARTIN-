@@ -9,3 +9,8 @@ Thumbs.db
 node_modules/
 .env
 .env.local
+
+# Cache Python (généré automatiquement)
+__pycache__/
+*.pyc
+*.pyo
