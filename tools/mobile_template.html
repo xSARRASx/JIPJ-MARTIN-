@@ -180,14 +180,14 @@ a{color:#9ad4ff}
     <div class="lock-emoji">🔐</div>
     <h1>Coffre</h1>
     <p class="lock-sub">Entre ton mot de passe maître</p>
-    <form id="unlock">
+    <div id="unlock">
       <div class="field">
-        <input id="mp" type="password" placeholder="Mot de passe maître" autocomplete="current-password" required autocapitalize="off" autocorrect="off" />
+        <input id="mp" type="password" placeholder="Mot de passe maître" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
         <button type="button" class="eye" id="eye" aria-label="Afficher">👁</button>
       </div>
-      <button type="submit" class="btn" id="unlockBtn">Déverrouiller</button>
+      <button type="button" class="btn" id="unlockBtn">Déverrouiller</button>
       <p id="err" class="err"></p>
-    </form>
+    </div>
     <p class="lock-foot">🔒 Chiffré · hors-ligne · sur ce téléphone</p>
   </div>
 </div>
@@ -327,9 +327,11 @@ function closeSheet(sheet){
 }
 function closeAllSheets(){ while(sheetStack.length) closeSheet(sheetStack[sheetStack.length-1]); }
 
-$("#unlock").addEventListener("submit", async e => {
-  e.preventDefault();
+$("#unlockBtn").onclick = doUnlock;
+$("#mp").addEventListener("keydown", e => { if(e.key === "Enter" || e.keyCode === 13) doUnlock(); });
+async function doUnlock(){
   const pw = $("#mp").value;
+  if(!pw){ $("#err").textContent = "Tape ton mot de passe."; return; }
   const btn = $("#unlockBtn"); btn.disabled = true; btn.textContent = "Déchiffrement…";
   $("#err").textContent = "";
   try{
@@ -337,11 +339,12 @@ $("#unlock").addEventListener("submit", async e => {
     mp = pw;
     $("#lock").hidden = true; $("#app").hidden = false; $("#fab").hidden = false; $("#lockBtn").hidden = false;
     renderApp(); bump();
-  }catch{
+  }catch(err){
+    console.error(err);
     $("#err").textContent = "Mot de passe incorrect.";
     $("#mp").select();
   }finally{ btn.disabled = false; btn.textContent = "Déverrouiller"; }
-});
+}
 $("#eye").onclick = () => { const i = $("#mp"); i.type = i.type === "password" ? "text" : "password"; };
 $("#lockBtn").onclick = lock;
 $("#fab").onclick = () => showAddEntry();
