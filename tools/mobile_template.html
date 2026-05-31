@@ -380,17 +380,25 @@ function renderCats(){
   $$("#cats .cat").forEach(b => b.onclick = () => { cat = b.dataset.cat; renderCats(); renderVault(); bump(); });
 }
 function renderVault(){
-  const ql = q.trim().toLowerCase();
+  const norm = s => String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+  const ql = norm(q.trim());
   let list = vault.entries;
-  if(cat !== "all") list = list.filter(e => e.category === cat);
-  if(ql) list = list.filter(e => ["name","username","email","url","notes","category"].some(k => String(e[k]||"").toLowerCase().includes(ql)));
-  list = list.slice().sort((a,b) => (a.name||"").localeCompare(b.name||"", "fr", {sensitivity:"base"}));
+  // Quand on recherche, on cherche dans TOUTES les catégories
+  if(!ql && cat !== "all") list = list.filter(e => e.category === cat);
   const catsMap = {}; vault.categories.forEach(c => catsMap[c.id] = c);
+  if(ql){
+    list = list.filter(e => {
+      const fields = [e.name, e.username, e.email, e.url, e.notes, e.category, (catsMap[e.category]||{}).name];
+      if(e.extra) e.extra.forEach(x => { fields.push(x.label); if(!x.secret) fields.push(x.value); });
+      return fields.some(v => norm(v).includes(ql));
+    });
+  }
+  list = list.slice().sort((a,b) => (a.name||"").localeCompare(b.name||"", "fr", {sensitivity:"base"}));
   if(!list.length){
     if(!vault.entries.length){
       $("#vaultView").innerHTML = '<div class="empty"><div class="empty-i">🗝️</div><h2>Coffre vide</h2><p>Tape sur <b>+</b> en bas à droite pour ajouter ta première entrée.</p></div>';
     }else{
-      $("#vaultView").innerHTML = '<div class="empty"><div class="empty-i">🔍</div><h2>Aucun résultat</h2><p>Aucune entrée ne correspond.</p></div>';
+      $("#vaultView").innerHTML = '<div class="empty"><div class="empty-i">🔍</div><h2>Aucun résultat</h2><p>Aucune entrée ne correspond à « ' + esc(q) + ' ».</p></div>';
     }
     return;
   }
