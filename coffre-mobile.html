@@ -383,17 +383,11 @@ function renderVault(){
   const norm = s => String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
   const ql = norm(q.trim());
   let list = vault.entries;
-  // Quand on recherche, on cherche dans TOUTES les catégories
+  // Quand on recherche, on cherche dans TOUTES les catégories, uniquement dans le titre
   if(!ql && cat !== "all") list = list.filter(e => e.category === cat);
-  const catsMap = {}; vault.categories.forEach(c => catsMap[c.id] = c);
-  if(ql){
-    list = list.filter(e => {
-      const fields = [e.name, e.username, e.email, e.url, e.notes, e.category, (catsMap[e.category]||{}).name];
-      if(e.extra) e.extra.forEach(x => { fields.push(x.label); if(!x.secret) fields.push(x.value); });
-      return fields.some(v => norm(v).includes(ql));
-    });
-  }
+  if(ql) list = list.filter(e => norm(e.name).includes(ql));
   list = list.slice().sort((a,b) => (a.name||"").localeCompare(b.name||"", "fr", {sensitivity:"base"}));
+  const catsMap = {}; vault.categories.forEach(c => catsMap[c.id] = c);
   if(!list.length){
     if(!vault.entries.length){
       $("#vaultView").innerHTML = '<div class="empty"><div class="empty-i">🗝️</div><h2>Coffre vide</h2><p>Tape sur <b>+</b> en bas à droite pour ajouter ta première entrée.</p></div>';
