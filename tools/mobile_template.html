@@ -93,6 +93,21 @@ a{color:#9ad4ff}
 .action.edit{background:rgba(124,92,255,.22);color:#d9c9ff}
 .action.danger{background:rgba(255,90,108,.18);color:#ffb1ba}
 .action:active{transform:translateY(1px)}
+/* attachments */
+.att-list{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+.att{display:flex;align-items:center;gap:10px;padding:9px 11px;background:rgba(7,9,26,.6);border-radius:10px}
+.att-ico{width:34px;height:34px;border-radius:8px;background:rgba(124,92,255,.18);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;overflow:hidden}
+.att-ico img{width:100%;height:100%;object-fit:cover}
+.att-txt{flex:1;min-width:0}
+.att-name{font-size:13px;color:#e8ecf4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.att-size{font-size:11px;color:#8b95a8;margin-top:1px}
+.att-thumb{max-width:100%;border-radius:10px;margin-top:6px;display:block}
+.att-form{display:flex;align-items:center;gap:10px;padding:9px 11px;background:#171f36;border:1px solid #2a3552;border-radius:10px;margin-bottom:6px}
+.att-form .att-txt{overflow:hidden}
+.att-rm{padding:6px 9px;border-radius:8px;background:rgba(255,90,108,.18);color:#ffb1ba;font-size:13px;flex-shrink:0}
+.att-rm:active{background:rgba(255,90,108,.3)}
+.att-add{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px;border:1px dashed #2a3552;border-radius:11px;color:#cfb6ff;font-weight:600;font-size:14px;background:transparent;margin-top:4px}
+.att-add:active{background:rgba(124,92,255,.1);border-color:rgba(124,92,255,.5)}
 /* planning */
 .plan-head{padding:14px 16px 6px}
 .plan-title{font-size:22px;font-weight:700;letter-spacing:-.02em}
@@ -240,6 +255,8 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7
 let vault = null, mp = null, dirty = false;
 let view = "vault", cat = "all", q = "", openId = null;
 let lockTimer = null, formCategory = null, editingId = null;
+let formAttachments = [];
+const MAX_FILE_BYTES = 3 * 1024 * 1024; // 3 Mo par fichier
 const sheetStack = [];
 
 const ICONS_QUICK = ["🔑","📷","✉️","🎮","🏦","💳","📱","💬","🎬","🛒","💻","🤖","📺","🎵","📚","🎨","⚙️","🌐","🔒","📝","🏠"];
@@ -428,7 +445,18 @@ function entryBody(e){
     const dot = r.secret ? "•".repeat(Math.min(14, r.v.length)) : (r.link ? '<a href="' + esc(r.v) + '" target="_blank" rel="noopener">' + esc(r.v) + '</a>' : esc(r.v));
     return '<div class="row"><div class="row-lab">' + esc(r.lab) + '</div><div class="row-val ' + (r.multi?"multi":"") + '"><div class="v" data-i="' + i + '">' + (r.secret?dot:esc(r.v)) + '</div>' + (r.secret?'<button class="mini icon" data-act="show" data-i="'+i+'">👁</button>':'') + '<button class="mini" data-act="copy" data-i="' + i + '">Copier</button></div></div>';
   }).join("");
-  return rowsHtml + '<div class="card-actions"><button class="action edit" data-act="edit">✏️ Modifier</button><button class="action danger" data-act="del">🗑️ Supprimer</button></div>';
+  let attHtml = "";
+  if((e.files||[]).length){
+    attHtml = '<div class="row-lab" style="margin:8px 0 4px">📎 Fichiers joints</div><div class="att-list">' +
+      e.files.map((a, i) => {
+        const isImg = (a.type||"").startsWith("image/");
+        const ico = isImg ? '<img src="' + a.data + '" alt="" />' : (a.type === "application/pdf" ? "📄" : "📎");
+        return '<div class="att"><div class="att-ico">' + ico + '</div>' +
+          '<div class="att-txt"><div class="att-name">' + esc(a.name) + '</div><div class="att-size">' + fmtSize(a.size||0) + '</div></div>' +
+          '<button class="mini" data-open-att="' + i + '">Ouvrir</button></div>';
+      }).join("") + '</div>';
+  }
+  return rowsHtml + attHtml + '<div class="card-actions"><button class="action edit" data-act="edit">✏️ Modifier</button><button class="action danger" data-act="del">🗑️ Supprimer</button></div>';
 }
 function bindCardRows(card, e){
   const rows = [];
@@ -455,17 +483,43 @@ function bindCardRows(card, e){
       bump();
     };
   });
+  card.querySelectorAll("[data-open-att]").forEach(btn => {
+    btn.onclick = ev => { ev.stopPropagation(); openAttachment((e.files||[])[+btn.dataset.openAtt]); bump(); };
+  });
+}
+function openAttachment(a){
+  if(!a) return;
+  try{
+    // data URL -> Blob -> ouverture dans un nouvel onglet (marche hors-ligne)
+    const parts = a.data.split(",");
+    const mime = (parts[0].match(/:(.*?);/) || [,a.type||"application/octet-stream"])[1];
+    const bin = atob(parts[1]);
+    const arr = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+    const blob = new Blob([arr], {type: mime});
+    const url = URL.createObjectURL(blob);
+    const w = window.open(url, "_blank");
+    if(!w){
+      // popup bloqué : on télécharge à la place
+      const link = document.createElement("a");
+      link.href = url; link.download = a.name || "fichier";
+      document.body.appendChild(link); link.click(); link.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }catch(err){ console.error(err); toast("Impossible d'ouvrir le fichier", "err"); }
 }
 
 function showAddEntry(){
   editingId = null;
   formCategory = cat !== "all" ? cat : (vault.categories[0]||{}).id;
+  formAttachments = [];
   openSheet("Nouvelle entrée", entryFormHTML(null));
   bindEntryForm();
 }
 function showEditEntry(id){
   const e = vault.entries.find(x => x.id === id); if(!e) return;
   editingId = id; formCategory = e.category;
+  formAttachments = (e.files || []).slice();
   openSheet("Modifier l'entrée", entryFormHTML(e));
   bindEntryForm(e);
 }
@@ -490,14 +544,62 @@ function entryFormHTML(e){
     '<input class="ipt" id="f-url" value="' + esc(e.url||"") + '" placeholder="https://…" type="url" autocapitalize="off" autocorrect="off" />' +
     '<label class="lbl">Notes</label>' +
     '<textarea class="ipt area" id="f-notes" placeholder="Infos diverses">' + esc(e.notes||"") + '</textarea>' +
+    '<label class="lbl">Fichiers joints</label>' +
+    '<div id="f-atts"></div>' +
+    '<input type="file" id="f-file" multiple style="display:none" />' +
+    '<button type="button" class="att-add" id="f-att-add">📎 Joindre un fichier</button>' +
     '<div class="form-actions"><button type="button" class="btn-2nd" data-close>Annuler</button><button type="button" class="btn" id="f-save">Enregistrer</button></div>' +
     '</div>';
+}
+function fmtSize(n){
+  if(n < 1024) return n + " o";
+  if(n < 1024*1024) return (n/1024).toFixed(0) + " Ko";
+  return (n/1024/1024).toFixed(1) + " Mo";
+}
+function renderFormAtts(){
+  const sheet = sheetStack[sheetStack.length-1]; if(!sheet) return;
+  const box = sheet.querySelector("#f-atts"); if(!box) return;
+  if(!formAttachments.length){ box.innerHTML = ""; return; }
+  box.innerHTML = formAttachments.map((a, i) => {
+    const thumb = (a.type||"").startsWith("image/")
+      ? '<img src="' + a.data + '" alt="" />'
+      : (a.type === "application/pdf" ? "📄" : "📎");
+    return '<div class="att-form"><div class="att-ico">' + thumb + '</div>' +
+      '<div class="att-txt"><div class="att-name">' + esc(a.name) + '</div><div class="att-size">' + fmtSize(a.size) + '</div></div>' +
+      '<button type="button" class="att-rm" data-rm="' + i + '">🗑️</button></div>';
+  }).join("");
+  box.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => {
+    formAttachments.splice(+b.dataset.rm, 1); renderFormAtts();
+  });
 }
 function bindEntryForm(e){
   const sheet = sheetStack[sheetStack.length-1]; if(!sheet) return;
   sheet.querySelectorAll(".ip").forEach(b => b.onclick = () => { sheet.querySelector("#f-icon").value = b.dataset.ic; });
   sheet.querySelector("#f-cat").onclick = () => showCategoryPicker();
   sheet.querySelector("#f-gen").onclick = () => { sheet.querySelector("#f-pw").value = genPassword(20); sheet.querySelector("#f-pw").type = "text"; };
+  // pièces jointes
+  renderFormAtts();
+  const fileInput = sheet.querySelector("#f-file");
+  sheet.querySelector("#f-att-add").onclick = () => fileInput.click();
+  fileInput.onchange = () => {
+    const files = Array.from(fileInput.files || []);
+    let pending = files.length;
+    files.forEach(file => {
+      if(file.size > MAX_FILE_BYTES){
+        toast('"' + file.name + '" trop lourd (max ' + fmtSize(MAX_FILE_BYTES) + ')', "err");
+        if(--pending === 0) renderFormAtts();
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        formAttachments.push({ id: uid(), name: file.name, type: file.type || "application/octet-stream", size: file.size, data: reader.result });
+        renderFormAtts(); bump();
+      };
+      reader.onerror = () => { toast('Lecture impossible : ' + file.name, "err"); };
+      reader.readAsDataURL(file);
+    });
+    fileInput.value = "";
+  };
   sheet.querySelector("#f-save").onclick = async () => {
     const name = sheet.querySelector("#f-name").value.trim();
     if(!name){ toast("Donne au moins un nom","err"); return; }
@@ -513,6 +615,7 @@ function bindEntryForm(e){
     const pw = sheet.querySelector("#f-pw").value; if(pw) data.password = pw;
     const url = sheet.querySelector("#f-url").value.trim(); if(url) data.url = url;
     const notes = sheet.querySelector("#f-notes").value.trim(); if(notes) data.notes = notes;
+    if(formAttachments.length) data.files = formAttachments.slice();
     if(editingId){
       const i = vault.entries.findIndex(x => x.id === editingId);
       if(i >= 0){ data.extra = vault.entries[i].extra; vault.entries[i] = data; }
